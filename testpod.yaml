@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: db-test
+  namespace: default
+spec:
+  containers:
+  - env:
+    - name: MASTER_USER
+      valueFrom:
+        secretKeyRef:
+          key: MASTER_USER
+          name: l2c-analyze-success-db
+    - name: MASTER_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: MASTER_PASSWORD
+          name: l2c-analyze-success-db
+    - name: TCS_INSTALL
+      valueFrom:
+        secretKeyRef:
+          key: TCS_INSTALL
+          name: l2c-analyze-success-db
+    - name: TCS_SID
+      valueFrom:
+        secretKeyRef:
+          key: TCS_SID
+          name: l2c-analyze-success-db
+    - name: TB_SID
+      valueFrom:
+        secretKeyRef:
+          key: TB_SID
+          name: l2c-analyze-success-db
+    - name: TCS_PORT
+      valueFrom:
+        secretKeyRef:
+          key: TCS_PORT
+          name: l2c-analyze-success-db
+    image: 192.168.6.110:5000/cloud_tcs_tibero_standalone:200309
+    imagePullPolicy: IfNotPresent
+    name: database
+    ports:
+    - containerPort: 8629
+      name: database
+      protocol: TCP
+    lifecycle:
+      postStart:
+        exec:
+          command:
+          - /bin/bash
+          - -c
+          - |
+            echo 'SELECT COUNT(*) FROM all_tables;' > /tmp/test.sql
+            echo 'EXIT;' >> /tmp/test.sql
+            echo "#!/bin/bash" > /tmp/probe.sh
+            echo "TEST=\$(tbsql $MASTER_USER/$MASTER_PASSWORD @/tmp/test.sql | grep -E '[0-9]* row[s]? selected')" >> /tmp/probe.sh
+            echo "[ \"\$TEST\" == \"\" ] && exit 1 || exit 0" >> /tmp/probe.sh
+            chmod +x /tmp/probe.sh
+    readinessProbe:
+      exec:
+        command:
+        - /bin/bash
+        - -c
+        - /tmp/probe.sh
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    volumeMounts:
+    - mountPath: /tibero/mnt/tibero
+      name: db-volume
+  volumes:
+  - name: db-volume
+    persistentVolumeClaim:
+      claimName: l2c-analyze-success-db
+
