@@ -1,0 +1,38 @@
+apiVersion: cicd.tmax.io/v1
+kind: IntegrationConfig
+metadata:
+  name: demo-test
+spec:
+  git:
+    type: github
+    repository: vingsu/cicd-test
+    token:
+      valueFrom:
+        secretKeyRef:
+          name: tmax-cloud-bot-token-demo
+          key: token
+  secrets:
+    - name: tmax-hub
+  jobs:
+    preSubmit:
+    - name: test
+      image: maven:3.6.3-openjdk-16-slim
+      script: |
+        mvn test
+      when:
+        branch:
+        - master
+    postSubmit:
+    - name: build-push-image
+      image: quay.io/buildah/stable
+      script: |
+        buildah bud --format docker --storage-driver=vfs -f ./Dockerfile -t $IMAGE_URL:${CI_HEAD_REF#refs/tags/} .
+        buildah push --storage-driver=vfs --creds=$CRED $IMAGE_URL:${CI_HEAD_REF#refs/tags/} docker://$IMAGE_URL:${CI_HEAD_REF#refs/tags/}
+      env:
+      - name: IMAGE_URL
+        value: tmaxcloudck/cicd-operator
+      securityContext:
+        privileged: true
+      when:
+        branch:
+        - master
