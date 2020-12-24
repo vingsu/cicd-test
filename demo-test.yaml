@@ -1,0 +1,71 @@
+apiVersion: cicd.tmax.io/v1
+kind: IntegrationConfig
+metadata:
+  name: demo-test
+spec:
+  git:
+    type: github
+    repository: vingsu/cicd-test
+    token:
+      valueFrom:
+        secretKeyRef:
+          name: tmax-cloud-bot-token-demo
+          key: token
+  secrets:
+    - name: tmax-hub
+  workspaces:
+    - name: s2i
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+  jobs:
+    preSubmit:
+      - name: test
+        image: maven:3.6.3-openjdk-16-slim
+        script: |
+          mvn test
+        when:
+          branch:
+            - master
+    postSubmit:
+      - name: s2i
+        image: tmaxcloudck/cicd-util:1.2.1
+        script: |
+          #!/bin/sh
+          set -ex
+
+          /cicd-util update-image-url
+
+          /usr/local/bin/s2i --clearCache --loglevel=0 \
+          build . tmaxcloudck/s2i-wildfly:latest \
+          --as-dockerfile $(workspaces.s2i.path)/gen-source/Dockerfile.gen
+        env:
+          - name: SOURCE_PATH
+            value: /tekton/home/integ-source
+          - name: IMAGE_URL
+            value: tmaxcloudck/cicd-test
+          - name: TARGET_FILE
+            value: $(workspaces.s2i.path)/image-url
+        when:
+          branch:
+            - master
+      - name: build-push-image
+        image: quay.io/buildah/stable
+        skipCheckout: true
+        script: |
+          IMAGE_URL=$(cat $(workspaces.s2i.path)/image-url)
+          buildah bud --format docker --storage-driver=vfs -f ./Dockerfile.gen -t $IMAGE_URL .
+          buildah push --storage-driver=vfs $IMAGE_URL docker://$IMAGE_URL
+        workingDir: $(workspaces.s2i.path)/gen-source
+        securityContext:
+          privileged: true
+        when:
+          branch:
+            - master
+        after:
+          - s2i
