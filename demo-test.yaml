@@ -69,3 +69,13 @@ spec:
             - master
         after:
           - s2i
+      - name: deploy
+        image: hashicorp/terraform:0.14.3
+        skipCheckout: true
+        script: |
+          IMAGE_URL=$(cat $(workspaces.s2i.path)/image-url)
+        when:
+          branch:
+            - master
+        after:
+          - build-push-image
